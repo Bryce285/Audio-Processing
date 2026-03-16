@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 from dsp import AudioProcessor
 from sqlalchemy.orm import Session
 from database import SessionLocal, get_db
-from models import Recording
+from models import Recording, Job
 from schemas import PipelineRequest
 
 UPLOAD_DIR = "uploads"
@@ -102,7 +102,7 @@ class Recordings:
 class Processing:
     router = APIRouter()
 
-    # TODO - implement a database job queue instead of just started every request as a background task
+    # TODO - we don't need this function after the worker has been implemented
     def run_pipeline(recording: Recording, pipeline, db: Session):
         infile = os.path.join(UPLOAD_DIR, recording.filename)
         outfile_name = f"processed_{recording.filename}"
@@ -125,7 +125,7 @@ class Processing:
             print(e)
 
     @router.post("/processing/{id}")
-    def process_recording(recording_id: int, request: PipelineRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    def create_processing_job(recording_id: int, request: PipelineRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
         """
         Run an audio pipeline on a recording
         """
@@ -142,12 +142,20 @@ class Processing:
             effect_step = {"effect": step.effect}
             effect_step.update(step.params)
             pipeline.append(effect_step)
-        
-        background_tasks.add_task(Processing.run_pipeline, recording, pipeline, db)
 
+        job = Job(
+            recording_id=recording.id,
+            pipeline_json=pipeline,
+            status="queued"
+        )
+
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        
         return {
-            "recording_id": recording.id,
-            "status": "processing_started",
+            "job_id": job.id,
+            "status": job.status,
             "pipeline_steps": len(pipeline)
         }
 

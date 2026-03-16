@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String, Float, DateTime
+from sqlalchemy.types import JSON
 from datetime import datetime, timezone
 from .database import Base
 
@@ -15,4 +16,11 @@ class Recording(Base):
 
 # TODO - add a pipelines table so the user can store pipeline presets
 
-# TODO - add a table to store job queue info
+class Job(Base):
+    __tablename__ = "jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    recording_id = Column(Integer)
+    pipeline_json = Column(JSON)
+    status = Column(String, default="queued")
+    created_at = Column(DateTime, default=datetime.now(timezone.utc))
