@@ -1,4 +1,4 @@
-# TODO - move database operations into the crud files
+# TODO - move database operations into the crud.py
 
 import shutil
 import os
@@ -10,9 +10,7 @@ from sqlalchemy.orm import Session
 from database import SessionLocal, get_db
 from models import Recording, Job
 from schemas import PipelineRequest
-
-UPLOAD_DIR = "uploads"
-PROCESSED_DIR = "processed"
+from paths import UPLOAD_DIR, PROCESSED_DIR
 
 class Recordings:
     router = APIRouter()
@@ -22,7 +20,7 @@ class Recordings:
         """
         User uploads a file, server saves the file to uploads/ and creates
         a database entry for it. API returns a response containing the 
-        entry's id, name, and status
+        entry's id, and name
         """
         
         file_path = os.path.join(UPLOAD_DIR, file.filename)
@@ -35,7 +33,6 @@ class Recordings:
             processed_filename=None,
             duration=None,
             rms=None,
-            status="queued"
         )
 
         db.add(recording)
@@ -102,28 +99,6 @@ class Recordings:
 class Processing:
     router = APIRouter()
 
-    # TODO - we don't need this function after the worker has been implemented
-    def run_pipeline(recording: Recording, pipeline, db: Session):
-        infile = os.path.join(UPLOAD_DIR, recording.filename)
-        outfile_name = f"processed_{recording.filename}"
-        outfile = os.path.join(PROCESSED_DIR, outfile_name)
-
-        try:
-            recording.status = "processing"
-            db.commit()
-
-            AudioProcessor.apply_pipeline(infile, outfile, pipeline)
-
-            recording.processed_filename = outfile_name
-            recording.status = "done"
-
-            db.commit()
-
-        except Exception as e:
-            recording.status = "failed"
-            db.commit()
-            print(e)
-
     @router.post("/processing/{id}")
     def create_processing_job(recording_id: int, request: PipelineRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
         """
@@ -171,9 +146,16 @@ class Processing:
         if not recording:
             raise HTTPException(status_code=404, detail="Recording not found")
         
+        job = db.query(Job).filter(
+            Job.recording_id == recording.id
+        ).first()
+        
+        if not job:
+            raise HTTPException(status_code=404, detail="Associated job not found")
+
         return {
             "recording_id": recording.id,
-            "status": recording.status,
+            "status": job.status,
             "processed_file": recording.processed_filename
         }
 
